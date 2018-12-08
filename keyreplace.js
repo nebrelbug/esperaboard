@@ -13,6 +13,7 @@ var table = {
     "U": "Û",
 }
 
+console.log('Esperaboard should now work')
 var enabled = true
 chrome.storage.local.get(['enabled'], function (data) {
     //console.log("enabled set to: " + data.enabled)
@@ -64,16 +65,20 @@ chrome.storage.onChanged.addListener(function (changes, namespace) {
 });
 
 
-document.addEventListener('keypress', function (e) {
+document.addEventListener('keypress', replaceKey, true)
+
+function replaceKey(e) {
+
     if (enabled) {
         var target = e.target;
-        var typed = String.fromCharCode(e.charCode);
+        var typed = e.key;
         if (e.target.value && (typed == "X" || typed == "x")) {
             var start = target.selectionStart;
             if (start > 0) {
                 var lastChar = target.value.substring(start - 1, start);
                 var replacement = table[lastChar];
                 if (replacement) {
+                    console.log("yes")
                     target.value = target.value.substring(0, start - 1) + replacement + target.value.substring(start);
                     target.selectionStart = start;
                     target.selectionEnd = start;
@@ -81,57 +86,37 @@ document.addEventListener('keypress', function (e) {
                     e.stopPropagation();
                 }
             }
-        } else if (e.target.isContentEditable && (typed == "X" || typed == "x")) {
-            var start = getCaretPosition(target)
-            if (start > 0) {
-                var lastChar = target.innerHTML.substring(start - 1, start);
-                var replacement = table[lastChar];
-                if (replacement) {
-                    target.innerHTML = target.innerHTML.substring(0, start - 1) +
-                        replacement +
-                        target.innerHTML.substring(start);
-                    setCaret(target, start)
+        } else if (target.isContentEditable && (typed == "X" || typed == "x")) {
+            // Get selection and range based on position of caret
+            // (we assume nothing is selected, and range points to the position of the caret)
+            var sel = window.getSelection();
+            var range = sel.getRangeAt(0);
+
+            // check that we have at least 1 characters in our container
+            if (range.startOffset - 1 >= 0) {
+                // clone the range, so we can alter the start and end
+                var clone = range.cloneRange();
+                // alter start and end of cloned range, so it selects 1 character
+                clone.setStart(range.startContainer, range.startOffset - 1);
+                clone.setEnd(range.startContainer, range.startOffset);
+                // get contents of cloned range
+                var contents = clone.toString();
+                if (table[contents]) { //If the character should be replaced
                     e.preventDefault();
                     e.stopPropagation();
+                    // delete the contents of the range
+                    clone.deleteContents();
+                    // create a text node with the new character
+                    var txtNode = document.createTextNode(table[contents]);
+                    range.insertNode(txtNode);
+                    // set the start of the range after the inserted node, so we have the caret after the inserted text
+                    range.setStartAfter(txtNode);
+                    // Chrome fix
+                    sel.removeAllRanges();
+                    sel.addRange(range);
                 }
+                console.log("contents: " + contents)
             }
         }
     }
-});
-
-
-function getCaretPosition(editableDiv) {
-    var caretPos = 0,
-        sel, range;
-    if (window.getSelection) {
-        sel = window.getSelection();
-        if (sel.rangeCount) {
-            range = sel.getRangeAt(0);
-            if (range.commonAncestorContainer.parentNode == editableDiv) {
-                caretPos = range.endOffset;
-            }
-        }
-    } else if (document.selection && document.selection.createRange) {
-        range = document.selection.createRange();
-        if (range.parentElement() == editableDiv) {
-            var tempEl = document.createElement("span");
-            editableDiv.insertBefore(tempEl, editableDiv.firstChild);
-            var tempRange = range.duplicate();
-            tempRange.moveToElementText(tempEl);
-            tempRange.setEndPoint("EndToEnd", range);
-            caretPos = tempRange.text.length;
-        }
-    }
-    return caretPos;
-}
-
-
-function setCaret(el, pos) {
-    var range = document.createRange();
-    var sel = window.getSelection();
-    range.setStart(el.childNodes[0], pos);
-    range.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(range);
-    el.focus();
 }
